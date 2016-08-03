@@ -463,7 +463,7 @@ connection_t * getReversedConnectionFromList(connection_t * originalConnection)
 *			If the reversed connection sent a syn packet, then this packet is acceptable and a row for this
 *			direction is created. Otherwise, the packet is dropped.
 *
-* @param	packetInfo - holds information about the recieved packet.
+* @param	packetInfo - holds information about the received packet.
 * @param	existingConnection - the connection of this direction.
 * @param	reversedConnection - the reversed direction.
 */
@@ -487,7 +487,7 @@ void handleSynAckPacket(packet_info_t * packetInfo, connection_t * existingConne
 			return;
 		}
 
-		/* Createing the connection row for this direction */
+		/* Creating the connection row for this direction */
 
 		/* Allocating memory for the new connection */
 		newConnection = kmalloc(sizeof(connection_t), GFP_ATOMIC);
@@ -539,7 +539,7 @@ Bool isFinAcceptable(connection_t * existing, connection_t * reversed)
 /**
 * @brief	Handles the given fin packet. Changes the description of the relevant connection or drops the packet.
 *
-* @param	packetInfo - holds information about the recieved packet.
+* @param	packetInfo - holds information about the received packet.
 * @param	existing - the relevant connection.
 * @param	reversed - the reversed connection.
 */
@@ -575,7 +575,7 @@ void handleRegularPacket(packet_info_t * packetInfo, connection_t * existingConn
 		Therefore, if from some reason it is NULL, this is a mistake and the packet should be dropped. */
 		if (existingConnection == NULL)
 		{
-			printk(KERN_ERR "existing conection doesn't exist although reversedConnection is at least SENT_SYN_ACK.\n");
+			printk(KERN_ERR "existing connection doesn't exist although reversedConnection is at least SENT_SYN_ACK.\n");
 			packetInfo->log.action = NF_DROP;
 			packetInfo->log.reason = TCP_NON_COMPLIANT;
 		}
@@ -615,10 +615,10 @@ Bool isFinalPacket(connection_t * existingConnection, connection_t * reversedCon
 }
 
 /**
-* @brief	Checks if the given packet has been already handeled. This can happen if the packet has been received 
+* @brief	Checks if the given packet has been already handled. This can happen if the packet has been received 
 *			and handled in the pre-routing hook, and it is now received in the post-routing hook.
 *
-* @param	packetInfo - holds information about the recieved packet, such as its ip fragment id and offset.
+* @param	packetInfo - holds information about the received packet, such as its ip fragment id and offset.
 * @param	existingConnection - the connection from the list which matches the given packet. Holds
 *			the ip fragment id and offset of the last packet it handled.
 *
@@ -685,8 +685,8 @@ void freeHttpState(void * state)
 */
 Bool initFragmentState(fragment_state_t * fragmentState, packet_info_t * packetInfo)
 {
-	fragmentState->headerPrefixLength = packetInfo->tcpPayloadLength;
-	fragmentState->headerPrefix = kmalloc(packetInfo->tcpPayloadLength, GFP_ATOMIC);
+	fragmentState->headerPrefixLength = packetInfo->transportPayloadLength;
+	fragmentState->headerPrefix = kmalloc(packetInfo->transportPayloadLength, GFP_ATOMIC);
 	if (NULL == fragmentState->headerPrefix)
 	{
 		printk(KERN_ERR "Failed to allocate memory for the header prefix.\n");
@@ -695,9 +695,9 @@ Bool initFragmentState(fragment_state_t * fragmentState, packet_info_t * packetI
 
 	/* Copying the tcp payload into the fragment */
 	if (skb_copy_bits(packetInfo->packetBuffer, 
-					  packetInfo->tcpPayloadOffset, 
+					  packetInfo->transportPayloadOffset, 
 					  (void *)fragmentState->headerPrefix, 
-					  packetInfo->tcpPayloadLength))
+					  packetInfo->transportPayloadLength))
 	{
 		printk(KERN_ERR "Failed copying the tcp payload inside the header prefix\n");
 		kfree(fragmentState->headerPrefix);
@@ -714,7 +714,7 @@ Bool initFragmentState(fragment_state_t * fragmentState, packet_info_t * packetI
 void appendToFragment(fragment_state_t * fragmentState, packet_info_t * packetInfo)
 {
 	unsigned char * newHeaderPrefix = NULL;
-	unsigned int newHeaderPrefixLength = fragmentState->headerPrefixLength + packetInfo->tcpPayloadLength;
+	unsigned int newHeaderPrefixLength = fragmentState->headerPrefixLength + packetInfo->transportPayloadLength;
 
 	if (fragmentState->headerPrefix == NULL)
 	{
@@ -735,9 +735,9 @@ void appendToFragment(fragment_state_t * fragmentState, packet_info_t * packetIn
 
 	/* Copying the tcp payload to the end of the new prefix */
 	if (skb_copy_bits(packetInfo->packetBuffer,
-					  packetInfo->tcpPayloadOffset,
+					  packetInfo->transportPayloadOffset,
 					  (void *)(newHeaderPrefix + fragmentState->headerPrefixLength),
-					  packetInfo->tcpPayloadLength))
+					  packetInfo->transportPayloadLength))
 	{
 		/* Freeing also the old prefix */
 		printk(KERN_ERR "Failed copying the tcp payload into the new header prefix\n");
@@ -757,7 +757,7 @@ void appendToFragment(fragment_state_t * fragmentState, packet_info_t * packetIn
 * @brief	Creates a new ftp state which holds the ftp part of the given packet, and 
 *			assign the connection's state to this new created state.
 *
-* @param	packetInfo - info reagrding the received packet.
+* @param	packetInfo - info regarding the received packet.
 * @param	connection - out parameter, the function fills connection->state with the new state.
 *
 * @note		connection->state should be NULL before calling this function.
@@ -882,7 +882,7 @@ void handleClientCompleteFtpPacket(connection_t * connection)
 * @brief	Handles the server complete ftp packet which the given connection holds.
 *			If the packet is a port-successful command, and the reversed connection has indeed sent a port command,
 *			then the connection's description and state changes accordingly. If the packet is a port-successful command
-*			but no port command was prviosuly sent, the current packet (which holds the last fragment of the command) is dropped.
+*			but no port command was previously sent, the current packet (which holds the last fragment of the command) is dropped.
 *
 * @param	packetInfo - the packet which holds the last fragment of the ftp packet.
 * @param	connection - the server's connection which holds the complete ftp packet.
@@ -940,17 +940,17 @@ void handleConnectionCompleteFtpPacket(packet_info_t * packetInfo, connection_t 
 }
 
 /*
-* @brief	Handles the recieved ftp packet, by saving it inside the given connection (which might already hold
-*			the prefix of a ftp fragment). If the received packet makes the connection hold a complete
-*			ftp packet, the complete packet is being handled.
+* @brief	Handles the received FTP packet, by saving it inside the given connection (which might already hold
+*			the prefix of a FTP fragment). If the received packet makes the connection hold a complete
+*			FTP packet, the complete packet is being handled.
 *
-* @param	packetInfo - the info of the recieved packet.
+* @param	packetInfo - the info of the received packet.
 * @param	connection - the connection to which the packet is related, and in which it will be saved.
-*			The connection might hold the prefix of an ftp packet.
+*			The connection might hold the prefix of an FTP packet.
 */
 void handleFtpPacket(packet_info_t * packetInfo, connection_t * connection, connection_t * reversedConnection)
 {
-	/* Saving the given ftp packet in the connection */
+	/* Saving the given FTP packet in the connection */
 	if (connection->state == NULL)
 	{
 		assignConnectionNewFtpState(packetInfo, connection);
@@ -987,71 +987,30 @@ Bool doesConnectionHoldHttpFragment(connection_t * connection)
 	return (httpState->fragmentState.headerPrefixLength != 0);
 }
 
-
-/**
-* @brief	Allocates memory for the tcp payload and retrieves it from the sk_buff.
-*
-* @param	packetInfo - holds the packet sk_buff struct, and other information regarding the packet such as
-*			the tcp payload length and offset.
-*
-* @return	the allocated tcp payload or NULL in case of error.
-*
-* @note		The returned buffer should be freed by kfree when it's no longer in use.
-*/
-unsigned char * getAllocatedTcpPayload(packet_info_t * packetInfo)
-{
-	unsigned char * tcpPayload = NULL;
-
-	/* Allocating memory for the tcp payload */
-	tcpPayload = kmalloc(packetInfo->tcpPayloadLength, GFP_ATOMIC);
-	if (NULL == tcpPayload)
-	{
-		printk(KERN_ERR "Failed allocating memory for the packet's tcp payload\n");
-		return NULL;
-	}
-
-	/* Retreiving the tcp payload */
-	if (skb_copy_bits(packetInfo->packetBuffer, packetInfo->tcpPayloadOffset, (void *)tcpPayload, packetInfo->tcpPayloadLength))
-	{
-		printk(KERN_ERR "Failed copying the tcp payload\n");
-		kfree(tcpPayload);
-		tcpPayload = NULL;
-		return NULL;
-	}
-
-	return tcpPayload;
-}
-
 /**
 * @brief	Checks if the given packet starts a new http get request.
 */
 Bool isBeginningOfHttpGetRequest(packet_info_t * packetInfo)
 {
 	unsigned char * tcpPayload = NULL;
-	Bool result = TRUE;
 
-	if (packetInfo->tcpPayloadLength < strlen("GET"))
+	if (packetInfo->transportPayloadLength < strlen("GET"))
 	{
 		return FALSE;
 	}
 
-	tcpPayload = getAllocatedTcpPayload(packetInfo);
+	tcpPayload = packetInfo->transportPayload; 
 
-	result = ((tcpPayload[0] == 'G') &&
-			  (tcpPayload[1] == 'E') &&
-			  (tcpPayload[2] == 'T'));
-
-	kfree(tcpPayload);
-	tcpPayload = NULL;
-
-	return result;
+	return ((tcpPayload[0] == 'G') &&
+			(tcpPayload[1] == 'E') &&
+			(tcpPayload[2] == 'T'));
 }
 
 /**
 * @brief	Creates a new http state which holds the http part of the given packet, and
 *			assign the connection's state to this new created state.
 *
-* @param	packetInfo - info reagrding the received packet.
+* @param	packetInfo - info regarding the received packet.
 * @param	connection - out parameter, the function fills connection->state with the new state.
 *
 * @note		connection->state should be NULL before calling this function.
@@ -1092,6 +1051,9 @@ void handleConnectionCompleteHttpPacket(packet_info_t * currentPacketInfo, char 
 {
 	char * singleLine = NULL;
 
+	// TODO: Delete
+	printk(KERN_INFO "handleConnectionCompleteHttpPacket\n");
+
 	/* Iterating the http lines */
 	singleLine = strsep(&httpPacket, HTTP_LINES_DELIMITER);
 	while (httpPacket != NULL)
@@ -1111,6 +1073,8 @@ void handleConnectionCompleteHttpPacket(packet_info_t * currentPacketInfo, char 
 		if ((sscanfResult == 2) && (strcmp(fieldName, HTTP_HOST_FIELD_NAME) == 0))
 		{
 			/* This is a host field */
+			// TODO: Delete
+			printk(KERN_INFO "Host: %s\n", fieldValue);
 			if (!isHostAccepted(fieldValue))
 			{
 				currentPacketInfo->log.action = NF_DROP;
@@ -1168,18 +1132,24 @@ void handleHttpPacket(packet_info_t * packetInfo, connection_t * connection)
 Bool isSpecificPortPacketWithData(packet_info_t * packetInfo, __be16 port)
 {	
 	return (((packetInfo->log.src_port == port) || (packetInfo->log.dst_port == port)) &&
-			(packetInfo->tcpPayloadLength != 0));
+			(packetInfo->transportPayloadLength != 0));
 }	
 
 void statefulInspect(packet_info_t * packetInfo, connection_t * existingConnection, connection_t * reversedConnection)
 {
+	// TODO: Delete
+	printk(KERN_INFO "statefulInspect\n");
 	if (isSpecificPortPacketWithData(packetInfo, htons(FTP_PORT)))
 	{
+		// TODO: Delete
+		printk(KERN_INFO "statefulInspect: calling handleFtpPacket\n");
 		handleFtpPacket(packetInfo, existingConnection, reversedConnection);
 	}
 
 	else if (isSpecificPortPacketWithData(packetInfo, htons(HTTP_PORT)))
 	{
+		// TODO: Delete
+		printk(KERN_INFO "statefulInspect: Calling handleHttpPacket\n");
 		handleHttpPacket(packetInfo, existingConnection);
 	}
 
@@ -1190,11 +1160,11 @@ void statefulInspect(packet_info_t * packetInfo, connection_t * existingConnecti
 }
 
 /**
-* @brief	Assuming that the recieved packet is not a new connection (it's not SYN, it might be SYN-ACK),
+* @brief	Assuming that the received packet is not a new connection (it's not SYN, it might be SYN-ACK),
 *			validates that the packet matches the state of the existing connection and updates it.
 *			The function also updates the action (accept or drop) of the packet and its reason.
 *
-* @param	packetInfo - holds information about the recieved packet.
+* @param	packetInfo - holds information about the received packet.
 */
 void updateConnection(packet_info_t * packetInfo)
 {
