@@ -18,8 +18,9 @@ typedef struct
 	__be16		ipFragmentOffset;
 	direction_t direction;
 
-	int				tcpPayloadOffset;
-	unsigned		tcpPayloadLength;
+	unsigned char * transportPayload;
+	unsigned		transportPayloadLength;
+	int				transportPayloadOffset;
 
 	const struct sk_buff * packetBuffer;
 
