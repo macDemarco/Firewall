@@ -34,6 +34,7 @@ typedef enum {
 	FTP_NON_COMPLIANT			 = -14,
 	VALID_FTP_DATA_CONN			 = -16,
 	BLOCKED_HTTP_HOST			 = -18,
+	REASON_MALFORMED_PACKET		 = -20,
 } reason_t;
 	
 
