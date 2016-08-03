@@ -37,6 +37,8 @@ typedef enum { FALSE = 0, TRUE = 1 } Bool;
 #define FTP_DATA_PORT 20
 #define HTTP_PORT 80
 
+#define UDP_HEADER_LENGTH 8
+
 /* Defining a macro, similar to the macro __ATTR (which is used in the macro DEVICE_ATTR),
 except that this macro doesn't stringify (adds " ") the attribute's name.
 I'm defining this macro in order to be able to define the attribute's name as a constant. */
