@@ -72,21 +72,32 @@ unsigned char * getTransportHeader(const struct sk_buff * packet)
 }
 
 /**
-* @brief	Sets the fields of packetInfo that are related to the TCP header, according to the given TCP header.
+* @brief	Sets the fields of packetInfo that are related to the TCP header, according to the given packet
+*			which is supposed to be tcp packet.
 *
-* @param	tcpHeader - the TCP header of the packet.
-* @param	tcpPacketLength
-* @param	tcpHeaderOffset
-* @param	packetInfo - holds the log which should be built (specifically fields src_port and dst_port),
-*			and the fields ack and isXmas that should be built.
+* @param	packetInfo - in and out parameter - contains both the packet's buffer from which the
+*			udp header is retrieved, and the related fields that should be filled
+*			(specifically fields src_port, dst_port, ack, isSyn, isRst, isFin, isXmas).
+* @param	ipPayloadLength - this should be long enough to contain a udp header.
+*
+* @return	the length of the tcp header or zero to indicate an error.
 */
-void buildPacketTCPHeaderInfo(const struct tcphdr * tcpHeader, 
-							  unsigned int ipPayloadLength, 
-							  unsigned int tcpHeaderOffset, 
-							  packet_info_t * packetInfo)
+unsigned int buildPacketTCPHeaderInfo(packet_info_t * packetInfo, unsigned int ipPayloadLength)
 {
+	struct tcphdr * tcpHeader = NULL;
 	unsigned int tcpHeaderLength = 0; 
 
+	/* Making sure the packet is long enough to contain a tcp header */
+	if (ipPayloadLength < sizeof(struct tcphdr))
+	{
+		printk(KERN_ERR "The packet is supposed to be a TCP packet, but it isn't long enough to contain a TCP header.\n");
+		return 0;
+	}
+
+	/* Retrieving the tcp header */
+	tcpHeader = (struct tcphdr *)getTransportHeader(packetInfo->packetBuffer);
+
+	/* Retrieving the relevant information from the tcp header */
 	packetInfo->log.src_port = tcpHeader->source;
 	packetInfo->log.dst_port = tcpHeader->dest;
 
@@ -100,60 +111,148 @@ void buildPacketTCPHeaderInfo(const struct tcphdr * tcpHeader,
 				          (tcpHeader->fin == 1));
 
 	tcpHeaderLength = tcpHeader->doff * 4; 
-	packetInfo->tcpPayloadOffset = tcpHeaderOffset + tcpHeaderLength;
-	packetInfo->tcpPayloadLength = ipPayloadLength - tcpHeaderLength;
+	return tcpHeaderLength;
 }
 
 /**
-* @brief	Sets the fields of packetInfo that are related to the UDP header, according to the given UDP header.
+* @brief	Sets the fields of packetInfo that are related to the UDP header, according to the given packet
+*			which is supposed to be udp packet.
 *
-* @param	udpHeader - the UDP header of the packet.
-* @param	packetInfo - the info which should be built (specifically fields src_port and dst_port).
+* @param	packetInfo - in and out parameter - contains both the packet's buffer from which the 
+*			udp header is retrieved, and the related fields that should be filled 
+*			(specifically fields src_port and dst_port).
+* @param	ipPayloadLength - this should be long enough to contain a udp header.
+*
+* @return	the length of the udp header or zero to indicate an error.
 */
-void buildPacketUDPHeaderInfo(const struct udphdr * udpHeader, packet_info_t * packetInfo)
+unsigned int buildPacketUDPHeaderInfo(packet_info_t * packetInfo, unsigned int ipPayloadLength)
 {
+	struct udphdr * udpHeader = NULL;
+
+	/* Making sure the packet is long enough to contain a udp header */
+	if (ipPayloadLength < sizeof(struct udphdr))
+	{
+		printk(KERN_ERR "The packet is supposed to be a UDP packet, but it isn't long enough to contain a UDP header.\n");
+		return 0;
+	}
+
+	/* Retrieving the udp header */
+	udpHeader = (struct udphdr *)getTransportHeader(packetInfo->packetBuffer);
+
+	/* Retrieving the relevant information from the udp header */
 	packetInfo->log.src_port = udpHeader->source;
 	packetInfo->log.dst_port = udpHeader->dest;
+
+	return UDP_HEADER_LENGTH;
 }
 
+/**
+* @brief	Allocates memory for the transport payload and retrieves it from the sk_buff.
+*
+* @param	packetInfo - holds the packet sk_buff struct, and other information regarding the packet such as
+*			the transport payload length and offset.
+* @param	transportPayloadOffset
+*
+* @return	TRUE for success, FALSE for failure.
+*
+* @note		This function allocates memory for the 'transportPayload' field of packetInfo.
+*			Therefore, when the packet info is no longer in use, the function 'destroyPacketInfo' must be called
+*			in order for that field's memory to be freed.
+*/
+Bool allocateAndSetTransportPayload(packet_info_t * packetInfo, unsigned int transportPayloadOffset)
+{
+	/* Allocating memory for the transport payload */
+	packetInfo->transportPayload = kmalloc(packetInfo->transportPayloadLength, GFP_ATOMIC);
+	if (NULL == packetInfo->transportPayload)
+	{
+		printk(KERN_ERR "Failed allocating memory for the packet's transport payload\n");
+		return FALSE;
+	}
+
+	/* Retrieving the transport payload */
+	if (skb_copy_bits(packetInfo->packetBuffer, 
+					  transportPayloadOffset, 
+					  (void *)packetInfo->transportPayload,
+					  packetInfo->transportPayloadLength))
+	{
+		printk(KERN_ERR "Failed copying the transport payload\n");
+		kfree(packetInfo->transportPayload);
+		packetInfo->transportPayload = NULL;
+		return FALSE;
+	}
+
+	return TRUE;
+}
 
 /**
 * @brief	Sets the fields of packetInfo that can be retrieved by the given sk_buff buffer (the IP's and protocol
 *			from the IP header, the ports from the transport header if it exists).
 *			Also sets some additional fields.
+*			If the packet contains a transport header and that header contains a payload, the payload is
+*			copied into packetInfo. Therefore, 'destroyPacketInfoData' must be called when packetInfo is no longer in use.
 *
 * @param	packetInfo - both in and out parameter. This should already hold the hooknum field and the buffer field.
 *			The fields that are set by this function are src_ip, dst_ip, protocol, src_port, dst_port in the log,
 *			and isIPv4, isXmas, ack.
+*
+* @return	TRUE for success, FALSE for failure.
 */
-void buildPacketInfo(packet_info_t * packetInfo)
+Bool buildPacketInfo(packet_info_t * packetInfo)
 {
+	const struct iphdr * ipHeader = NULL;
+	unsigned int ipPayloadLength = 0;
+	unsigned int ipHeaderLength = 0;
+	unsigned int transportHeaderLength = 0;
+
 	packetInfo->isIPv4 = isPacketIPv4(packetInfo->packetBuffer);
-	packetInfo->isXmas = FALSE;
-	packetInfo->ack = ACK_ANY;
-
-	if (packetInfo->isIPv4)
+	if (!packetInfo->isIPv4)
 	{
-		const struct iphdr * ipHeader = NULL;
-		unsigned char * transportHeader = NULL;
-		unsigned int ipPayloadLength = 0;
-		unsigned int ipHeaderLength = 0;
-
-		ipHeader = ip_hdr(packetInfo->packetBuffer);
-		buildPacketIPHeaderInfo(ipHeader, packetInfo);
-		ipHeaderLength = (ipHeader->ihl) * 4;
-		ipPayloadLength = packetInfo->packetBuffer->len - ipHeaderLength;
-		transportHeader = getTransportHeader(packetInfo->packetBuffer);
-
-		if (packetInfo->log.protocol == PROT_TCP)
-		{
-			buildPacketTCPHeaderInfo((struct tcphdr *)transportHeader, ipPayloadLength, ipHeaderLength, packetInfo);
-		}
-		else if (packetInfo->log.protocol == PROT_UDP)
-		{
-			buildPacketUDPHeaderInfo((struct udphdr *)transportHeader, packetInfo);
-		}
+		return TRUE;
 	}
+
+	/* Parsing the IP header */
+	if (packetInfo->packetBuffer->len < sizeof(struct iphdr))
+	{
+		printk(KERN_ERR "The packet is supposed to be an IPv4 packet, but it isn't long enough to contain an IP header.\n");
+		return FALSE;
+	}
+	ipHeader = ip_hdr(packetInfo->packetBuffer);
+	buildPacketIPHeaderInfo(ipHeader, packetInfo);
+	ipHeaderLength = (ipHeader->ihl) * 4;
+	ipPayloadLength = packetInfo->packetBuffer->len - ipHeaderLength;
+
+	/* Parsing the transport header, if exists */
+	if (packetInfo->log.protocol == PROT_TCP)
+	{
+		transportHeaderLength = buildPacketTCPHeaderInfo(packetInfo, ipPayloadLength);
+	}
+	else if (packetInfo->log.protocol == PROT_UDP)
+	{
+		transportHeaderLength = buildPacketUDPHeaderInfo(packetInfo, ipPayloadLength);
+	}
+	else
+	{
+		return TRUE;
+	}
+
+	if (transportHeaderLength == 0)
+	{
+		return FALSE;
+	}
+
+	/* Retrieving the transport payload, if exists */
+	packetInfo->transportPayloadLength = ipPayloadLength - transportHeaderLength;
+	if (packetInfo->transportPayloadLength > 0)
+	{
+		packetInfo->transportPayloadOffset = ipHeaderLength + transportHeaderLength;
+		return allocateAndSetTransportPayload(packetInfo, packetInfo->transportPayloadOffset);
+	}
+	else
+	{
+		packetInfo->transportPayloadLength = 0;
+	}
+	
+	return TRUE;
 }
 
 /**
@@ -215,6 +314,15 @@ direction_t getPacketDirection(const struct net_device * in, const struct net_de
 	return DIRECTION_ANY;
 }
 
+/**
+* @brief	Resets all of the fields of packetInfo.
+*			This function should be called only when creating a new packet_info_t.
+*			In order to reset an existing packet_info_t, the function 'destroyPacketInfoData' should be called.
+*			In addition, the function 'destroyPacketInfoData' must be called when the packet_info_data 
+*			is no longer in use.
+*
+* @param	packetInfo
+*/
 void resetPacketInfo(packet_info_t * packetInfo)
 {
 	packetInfo->isIPv4 = TRUE;
@@ -226,16 +334,32 @@ void resetPacketInfo(packet_info_t * packetInfo)
 	packetInfo->ipFragmentId = 0;
 	packetInfo->ipFragmentOffset = 0;
 	packetInfo->direction = DIRECTION_ANY;
-	packetInfo->tcpPayloadLength = 0;
-	packetInfo->tcpPayloadOffset = 0;
+	packetInfo->transportPayload = NULL;
+	packetInfo->transportPayloadLength = 0;
+	packetInfo->transportPayloadOffset = 0;
 	packetInfo->packetBuffer = NULL;
 }
 
 /**
+* @brief	Frees all of the allocated fields of the given packetInfo, and then resets it.
+*/
+void destroyPacketInfoData(packet_info_t * packetInfo)
+{
+	/* Freeing the transport payload, if allocated */
+	if (packetInfo->transportPayload != NULL)
+	{
+		kfree(packetInfo->transportPayload);
+		packetInfo->transportPayload = NULL;
+	}
+
+	resetPacketInfo(packetInfo);
+}
+
+/**
 * @brief	Decides if the given syn-packet is acceptable, and sets its action and reason accordingly.
-*			The packet is accaeptable if the rules-table approves it, or if it's trying to initiate an ftp-data
-*			connecton which is related to an existing ftp connection.
-*			If the packet is acceptable, a new tcp connection is created in the connections-table.
+*			The packet is acceptable if the rules-table approves it, or if it's trying to initiate an FTP-data
+*			connection which is related to an existing FTP connection.
+*			If the packet is acceptable, a new TCP connection is created in the connections-table.
 *
 * @param	packetInfo - the received syn-packet, which its action should be set.
 */
@@ -259,44 +383,46 @@ void setSynPacketAction(packet_info_t * packetInfo)
 }
 
 /**
-* @brief	Decides if the given packet is accatable, and sets its action and reason accordingly.
-*			If the firewall isn't active, the packet is acceptable. Otherwise:
-*			If the packet is related to an existing tcp connection, decides according to the connection-table.
-*			Otherwise, decides according to the rules-table. A special case is when the packet is a new tcp connection.
+* @brief	Assuming the firewall is active, decides if the given packet is acceptable, 
+*			and sets its action and reason accordingly
+*			If the packet is related to an existing TCP connection, decides according to the connection-table.
+*			Otherwise, decides according to the rules-table. A special case is when the packet is a new TCP connection.
 *
 * @param	packetInfo - the packet which its action should be set.
 */
 void setPacketAction(packet_info_t * packetInfo)
 {
-	if (!isFirewallActive())
-	{
-		packetInfo->log.action = NF_ACCEPT;
-		packetInfo->log.reason = REASON_FW_INACTIVE;
-		return;
-	}
-
 	if (packetInfo->log.protocol == PROT_TCP)
 	{
+		// TODO: Delete
+		printk(KERN_INFO "setPacketAction: PROT_TCP\n");
 		if ((packetInfo->ack == ACK_NO) && (packetInfo->isSyn))
 		{
 			/* New TCP connection */
+			// TODO: Delete
+			printk(KERN_INFO "setPacketAction: new TCP connection\n");
 			setSynPacketAction(packetInfo);
 		}
 		else
 		{
 			/* Existing TCP connection: Deciding what to do with the packet according the connection table. */
+			// TODO: Delete
+			printk(KERN_INFO "setPacketAction: Existing TCP connection.\n");
 			updateConnection(packetInfo);
 		}
 	}
 	else
 	{
+		// TODO: Delete
+		printk(KERN_INFO "setPacketAction: not PROT_TCP\n");
 		setPacketActionAccordingToRulesTable(packetInfo);
 	}
 }
 
 /**
 * @brief	The hook function, which is registered both to the pre-routing and the post-routing points.
-*			Decides whether to accept the packet or drop it, according to the function 'isHookedPacketAcceptable'.
+*			Processes the packet by parsing it, deciding whether to accept the packet or drop it and logging it.
+*			If the firewall is inactive, all packets will be accepted.
 *
 * @param	hooknum
 * @param	skb
@@ -314,17 +440,37 @@ unsigned int processPacket(
 	int(*okfn)(struct sk_buff *))
 {
 	packet_info_t packetInfo = {{0}};
+	unsigned int action = 0;
+	Bool isPacketInfoBuilt = TRUE;
+
 	resetPacketInfo(&packetInfo);
-	
 	packetInfo.log.hooknum = hooknum;
 	packetInfo.direction = getPacketDirection(in, out);
 	packetInfo.packetBuffer = skb;
 
-	buildPacketInfo(&packetInfo);
-	setPacketAction(&packetInfo);
+	isPacketInfoBuilt = buildPacketInfo(&packetInfo);
+	if (isFirewallActive())
+	{
+		if (isPacketInfoBuilt)
+		{
+			setPacketAction(&packetInfo);
+		}
+		else
+		{
+			packetInfo.log.action = NF_DROP;
+			packetInfo.log.reason = REASON_MALFORMED_PACKET;
+		}
+	}
+	else
+	{
+		packetInfo.log.action = NF_ACCEPT;
+		packetInfo.log.reason = REASON_FW_INACTIVE;
+	}
 	writeToLog(&packetInfo.log);
 
-	return packetInfo.log.action;
+	action = packetInfo.log.action;
+	destroyPacketInfoData(&packetInfo);
+	return action;
 }
 
 /**

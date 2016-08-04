@@ -1086,6 +1086,10 @@ void setReasonString(char * reasonStr, reason_t reason)
 			sprintf(reasonStr, "%s", "BLOCKED_HTTP_HOST");
 			return;
 
+		case REASON_MALFORMED_PACKET:
+			sprintf(reasonStr, "%s", "MALFORMED_PACKET");
+			return;
+
 		default:
 			sprintf(reasonStr, "%d", reason);
 			return;
