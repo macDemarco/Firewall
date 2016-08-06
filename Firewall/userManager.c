@@ -1090,6 +1090,10 @@ void setReasonString(char * reasonStr, reason_t reason)
 			sprintf(reasonStr, "%s", "MALFORMED_PACKET");
 			return;
 
+		case REASON_TKEY_MALFORMED_PACKET:
+			sprintf(reasonStr, "%s", "TKEY_MALFORMED_PACKET");
+			return;
+
 		default:
 			sprintf(reasonStr, "%d", reason);
 			return;
