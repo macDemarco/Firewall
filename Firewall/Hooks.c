@@ -6,6 +6,7 @@
 #include <linux/slab.h>
 #include "KernelDefs.h"
 #include "Connections.h"
+#include "TkeyCveFix.h"
 
 /* Globals */
 static struct nf_hook_ops preRoutingHook = { { NULL, NULL }, 0 };
@@ -384,7 +385,7 @@ void setSynPacketAction(packet_info_t * packetInfo)
 
 /**
 * @brief	Assuming the firewall is active, decides if the given packet is acceptable, 
-*			and sets its action and reason accordingly
+*			and sets its action and reason accordingly.
 *			If the packet is related to an existing TCP connection, decides according to the connection-table.
 *			Otherwise, decides according to the rules-table. A special case is when the packet is a new TCP connection.
 *
@@ -392,6 +393,12 @@ void setSynPacketAction(packet_info_t * packetInfo)
 */
 void setPacketAction(packet_info_t * packetInfo)
 {
+	setPacketActionAccordingToTkeyCve(packetInfo);
+	if (packetInfo->log.action == NF_DROP)
+	{
+		return;
+	}
+
 	if (packetInfo->log.protocol == PROT_TCP)
 	{
 		// TODO: Delete
