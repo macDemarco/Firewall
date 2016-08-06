@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -128,6 +128,7 @@
     <ClInclude Include="Log.h" />
     <ClInclude Include="Rules.h" />
     <ClInclude Include="rulesTableTester.h" />
+    <ClInclude Include="TkeyCveFix.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Connections.c" />
@@ -138,6 +139,7 @@
     <ClCompile Include="Rules.c" />
     <ClCompile Include="rulesTableTester.c" />
     <ClCompile Include="tester.c" />
+    <ClCompile Include="TkeyCveFix.c" />
     <ClCompile Include="userManager.c" />
     <ClCompile Include="userTester.c" />
   </ItemGroup>
