@@ -1,6 +1,8 @@
 #include "TkeyCveFix.h"
 #include <linux/inet.h>
 
+// TODO: Maybe add a check of the opcode - maybe only standard queries are relevant.
+// TODO: Update documentation.
 /**
 * @brief	Checks if the given packet is a DNS query. If so, sets the given pointer to point
 *			at the DNS header.
@@ -16,17 +18,18 @@
 * @return	TRUE if it is a DNS query, FALSE otherwise.
 *			If the packet is malformed (and isGenerallyMalformed is set to TRUE), FALSE is returned.
 */
-Bool isDNSQuery(packet_info_t * packetInfo, dns_header_t ** dnsHeader, Bool * isGenerallyMalformed)
+Bool isDNSQuery(unsigned char * message, unsigned int messageLength, log_row_t * packetLog, 
+				dns_header_t ** dnsHeader, Bool * isGenerallyMalformed)
 {
 	*isGenerallyMalformed = FALSE;
 
-	if ((packetInfo->log.dst_port != htons(DNS_PORT)) || (packetInfo->transportPayloadLength == 0))
+	if (messageLength == 0)
 	{
-		/* Not a DNS packet, or an empty DNS packet (like a TCP ACK packet) */
+		/* Empty DNS packet (like a TCP ACK packet) */
 		return FALSE;
 	}
 
-	if (packetInfo->transportPayloadLength < sizeof(dns_header_t))
+	if (messageLength < sizeof(dns_header_t))
 	{
 		/* Malformed packet */
 		printk(KERN_ERR "The received packet is supposed to be a DNS packet, but it isn't long enough to be one.\n");
@@ -34,12 +37,13 @@ Bool isDNSQuery(packet_info_t * packetInfo, dns_header_t ** dnsHeader, Bool * is
 		return FALSE;
 	}
 
-	*dnsHeader = (dns_header_t *)packetInfo->transportPayload;
+	*dnsHeader = (dns_header_t *)message;
 	return ((*dnsHeader->queryResponse == 0) &&		/* query */
 			(*dnsHeader->questionCount == 1) &&		/* Exactly one question */
 			(*dnsHeader->additionalCount >= 1));	/* At least one additional record */
 }
 
+// TODO: Update documentation.
 /**
 * @brief	Skips the given number of bytes in the given packet.
 *
@@ -48,12 +52,87 @@ Bool isDNSQuery(packet_info_t * packetInfo, dns_header_t ** dnsHeader, Bool * is
 *
 * @note		This function doesn't check the validity of the skip (It might skip over the end of the packet).
 */
-void skipBytesInPacket(unsigned int bytesToSkip, unsigned char ** restOfPacket, unsigned int * restOfPacketLength)
+void skipBytesInMessage(unsigned int bytesToSkip, unsigned char ** restOfMessage, unsigned int * restOfMessageLength)
 {
-	(*restOfPacket) += bytesToSkip;
-	(*restOfPacketLength) -= bytesToSkip;
+	(*restOfMessage) += bytesToSkip;
+	(*restOfMessageLength) -= bytesToSkip;
 }
 
+Bool isLabelLengthByte(unsigned char currentByte)
+{
+	/* Checks if the 2 most significant bits are zeros */
+	return ((currentByte >> LABEL_LENGTH_SHIFT_RIGHT_SIZE) == 0);
+}
+
+// TODO: Implement!
+unsigned char getLowerCase(unsigned char character)
+{
+	return character;
+}
+
+// Assuming that the name is long enough to contain the whole label plus a separator
+void appendLabelToName(unsigned char * name, unsigned char * label, unsigned char labelLength)
+{
+	unsigned char i = 0;
+	for (i = 0; i < labelLength; ++i)
+	{
+		name[i] = getLowerCase(label[i]);
+	}
+
+	name[i] = LABEL_SEPARATOR;
+}
+
+Bool isIndexInBounds(unsigned char index, unsigned char length1, unsigned char length2)
+{
+	return ((index < length1) && (index < length2));
+}
+
+Bool parseUncompressedDomainName(unsigned char * name, unsigned char nameCapacity,
+								 unsigned char * message, unsigned int messageLength)
+{
+	unsigned char i = 0;
+	unsigned char labelLength = 0;
+	unsigned char nextLabelLengthIndex = 0;
+
+	while (isIndexInBounds(i, nameCapacity, messageLength))
+	{
+		labelLength = message[i];
+		if (labelLength == 0)
+		{
+			/* Terminating zero length byte */
+			name[i] = 0;
+			return TRUE;
+		}
+
+		if (!isLabelLengthByte(labelLength))
+		{
+			/* The new label doesn't start with a label length byte */
+			printk(KERN_ERR "Malformed packet: A domain name label doesn't start with a length byte.\n");
+			return FALSE;
+		}
+
+		i++;
+		nextLabelLengthIndex = i + labelLength;
+		if (!isIndexInBounds(nextLabelLengthIndex, nameCapacity, messageLength))
+		{
+			/* The label is too long */
+			printk(KERN_ERR "Malformed packet: The domain name label is too long.\n");
+			return FALSE;
+		}
+
+		appendLabelToName(name + i, message + i, labelLength);
+		i = nextLabelLengthIndex;
+	}
+
+	/* Missing terminating zero length byte */
+	printk(KERN_ERR "Malformed packet: Missing a terminating zero length byte.\n");
+	return FALSE;
+}
+
+Bool parseDomainName(unsigned char * name, unsigned char ** restOfMessage, unsigned int * restOfMessageLength,
+					 unsigned char * messageStart, unsigned int messageLength);
+
+// TODO: Update documentation.
 /**
 * @brief	Skips the DNS name (which ends with a zero length byte) in the given packet.
 *
@@ -63,14 +142,14 @@ void skipBytesInPacket(unsigned int bytesToSkip, unsigned char ** restOfPacket, 
 * @return	TRUE for success, FALSE for failure. A failure is caused by a malformed packet,
 *			which ends without a zero length byte.
 */
-Bool skipDNSNameInPacket(unsigned char ** restOfPacket, unsigned int * restOfPacketLength)
+Bool skipDNSNameInMessage(unsigned char ** restOfMessage, unsigned int * restOfMessageLength)
 {
 	unsigned char currnetByte = 0;
 
-	while (*restOfPacketLength > 0)
+	while (*restOfMessageLength > 0)
 	{
-		currnetByte = *restOfPacket;
-		skipBytesInPacket(1, restOfPacket, restOfPacketLength);
+		currnetByte = *restOfMessage;
+		skipBytesInMessage(1, restOfMessage, restOfMessageLength);
 
 		if (currnetByte == 0)
 		{
@@ -83,6 +162,7 @@ Bool skipDNSNameInPacket(unsigned char ** restOfPacket, unsigned int * restOfPac
 	return FALSE;
 }
 
+// TODO: Update documentation.
 /**
 * @brief	Parses the DNS question.
 *
@@ -95,31 +175,32 @@ Bool skipDNSNameInPacket(unsigned char ** restOfPacket, unsigned int * restOfPac
 * @return	TRUE for success, FALSE for failure (a failure can be caused due to a malformed packet. An according
 *			error message is printed in that case).
 */
-Bool parseDNSQuestion(dns_question_t * question, unsigned char ** restOfPacket, unsigned int * restOfPacketLength)
+Bool parseDNSQuestion(dns_question_t * question, unsigned char ** restOfMessage, unsigned int * restOfMessageLength)
 {
 	/* Retrieving the name of the question */
-	question->name = *restOfPacket;
-	if (!skipDNSNameInPacket(restOfPacket, restOfPacketLength))
+	question->name = *restOfMessage;
+	if (!skipDNSNameInMessage(restOfMessage, restOfMessageLength))
 	{
 		question->name = NULL;
 		return FALSE;
 	}
 	
 	/* Retrieving the type and class of the question */
-	if (*restOfPacketLength < sizeof(question->type) + sizeof(question->dnsClass))
+	if (*restOfMessageLength < sizeof(question->type) + sizeof(question->dnsClass))
 	{
 		printk(KERN_ERR "Malformed packet: The DNS question isn't long enough to contain its type and class.\n");
 		return FALSE;
 	}
 
-	question->type = *((__be16 *)(*restOfPacket));
-	skipBytesInPacket(sizeof(question->type));
-	question->dnsClass = *((__be16 *)(*restOfPacket));
-	skipBytesInPacket(sizeof(question->dnsClass));
+	question->type = *((__be16 *)(*restOfMessage));
+	skipBytesInMessage(sizeof(question->type));
+	question->dnsClass = *((__be16 *)(*restOfMessage));
+	skipBytesInMessage(sizeof(question->dnsClass));
 
 	return TRUE;
 }
 
+// TODO: Update documentation.
 /**
 * @brief	Skips the current record.
 *
@@ -132,34 +213,35 @@ Bool parseDNSQuestion(dns_question_t * question, unsigned char ** restOfPacket, 
 * @return	TRUE for success, FALSE for failure (a failure can be caused due to a malformed packet. An according
 *			error message is printed in that case).
 */
-Bool skipSingleRecord(unsigned char ** restOfPacket, unsigned int * restOfPacketLength)
+Bool skipSingleRecord(unsigned char ** restOfMessage, unsigned int * restOfMessageLength)
 {
 	dns_fixed_size_rr_data_t * fixedSizeRRData = NULL;
 
 	/* Skipping the name */
-	if (!skipDNSNameInPacket(restOfPacket, restOfPacketLength))
+	if (!skipDNSNameInMessage(restOfMessage, restOfMessageLength))
 	{
 		return FALSE;
 	}
 
 	/* Skipping the fixed size fields */
-	if (*restOfPacketLength < sizeof(dns_fixed_size_rr_data_t))
+	if (*restOfMessageLength < sizeof(dns_fixed_size_rr_data_t))
 	{
 		printk(KERN_ERR "Malformed packet: The DNS record isn't long enough to contain all of its fields.\n");
 		return FALSE;
 	}
-	fixedSizeRRData = (dns_fixed_size_rr_data_t *)*restOfPacket;
-	skipBytesInPacket(sizeof(dns_fixed_size_rr_data_t), restOfPacket, restOfPacketLength);
+	fixedSizeRRData = (dns_fixed_size_rr_data_t *)*restOfMessage;
+	skipBytesInMessage(sizeof(dns_fixed_size_rr_data_t), restOfMessage, restOfMessageLength);
 
 	/* Skipping the rdata */
-	if (*restOfPacketLength < fixedSizeRRData->rdataLength)
+	if (*restOfMessageLength < fixedSizeRRData->rdataLength)
 	{
 		printk(KERN_ERR "Malformed packet: The DNS record isn't long enough to contain its rdata.\n");
 		return FALSE;
 	}
-	skipBytesInPacket(fixedSizeRRData->rdataLength);
+	skipBytesInMessage(fixedSizeRRData->rdataLength);
 }
 
+// TODO: Update documentation.
 /**
 * @brief	Skips recordsNum DNS records.
 *
@@ -173,13 +255,13 @@ Bool skipSingleRecord(unsigned char ** restOfPacket, unsigned int * restOfPacket
 * @return	TRUE for success, FALSE for failure (a failure can be caused due to a malformed packet. An according
 *			error message is printed in that case).
 */
-Bool skipRecords(unsigned int recordsNum, unsigned char ** restOfPacket, unsigned int * restOfPacketLength)
+Bool skipRecords(unsigned int recordsNum, unsigned char ** restOfMessage, unsigned int * restOfMessageLength)
 {
 	unsigned int currentRecordIndex = 0;
 
-	while (currentRecordIndex < recordsNum)
+	for (currentRecordIndex = 0; currentRecordIndex < recordsNum; ++currentRecordIndex)
 	{
-		if (!skipSingleRecord(restOfPacket, restOfPacketLength))
+		if (!skipSingleRecord(restOfMessage, restOfMessageLength))
 		{
 			return FALSE;
 		}
@@ -222,9 +304,20 @@ void freeQuestionData(dns_question_t * question)
 * @return	TRUE if the additional section is malformed (in the TKEY CVE way), FALSE otherwise.
 */
 Bool isAdditionalSectionMalformed(unsigned int additionalRecordsNum, unsigned char * additionalSection,
-								  unsigned int additionalSectionLength, char * questionName, 
-								  Bool * isGenerallyMalformed);
+								  unsigned int additionalSectionLength, char * questionName,
+								  Bool * isGenerallyMalformed)
+{
+	unsigned int currentRecordIndex = 0;
+	unsigned char * restOfSection = additionalSection;
+	unsigned int restOfSectionLength = additionalSectionLength;
 
+	for (currentRecordIndex = 0; currentRecordIndex < recordsNum; ++currentRecordIndex)
+	{
+
+	}
+}
+
+// TODO: Update documentation.
 /**
 * @brief	Checks if the given packet is a malformed TKEY packet.
 *			More specifically, it checks if the packet's structure can cause CVE-2015-5477 (denial of service
@@ -245,11 +338,13 @@ Bool isAdditionalSectionMalformed(unsigned int additionalRecordsNum, unsigned ch
 * @note		If the function sets the out parameter isGenerallyMalformedis set to TRUE, the return value
 *			should be ignored.
 */
-Bool isMalformedTKEYPacket(packet_info_t * packetInfo, Bool * isGenerallyMalformed)
+Bool isMalformedTKEYQuery(unsigned char * dnsMessage, unsigned int dnsMessageLength, 
+						  log_row_t * packetLog, Bool * isGenerallyMalformed)
+//Bool isMalformedTKEYPacket(packet_info_t * packetInfo, Bool * isGenerallyMalformed)
 {
 	dns_header_t * dnsHeader = NULL;
-	unsigned char * restOfPacket = NULL;
-	unsigned int restOfPacketLength = 0;
+	unsigned char * restOfMessage = NULL;
+	unsigned int restOfMessageLength = 0;
 	dns_question_t question = { NULL, 0, 0 };
 	unsigned int recordsToSkipNum = 0;
 	unsigned char * additionalSection = NULL;
@@ -257,15 +352,15 @@ Bool isMalformedTKEYPacket(packet_info_t * packetInfo, Bool * isGenerallyMalform
 
 	*isGenerallyMalformed = FALSE;
 	
-	if (!isDNSQuery(packetInfo, &dnsHeader, isGenerallyMalformed))
+	if (!isDNSQuery(dnsMessage, dnsMessageLength, packetLog, &dnsHeader, isGenerallyMalformed))
 	{
 		return FALSE;
 	}
 
-	restOfPacket = dnsHeader + sizeof(dns_header_t);
-	restOfPacketLength = packetInfo->transportPayloadLength - sizeof(dns_header_t);
+	restOfMessage = dnsHeader + sizeof(dns_header_t);
+	restOfMessageLength = dnsMessageLength - sizeof(dns_header_t);
 
-	if (!parseDNSQuestion(&restOfPacket, &restOfPacketLength, &question))
+	if (!parseDNSQuestion(&restOfMessage, &restOfMessageLength, &question))
 	{
 		*isGenerallyMalformed = TRUE;
 		return FALSE;
@@ -278,14 +373,14 @@ Bool isMalformedTKEYPacket(packet_info_t * packetInfo, Bool * isGenerallyMalform
 	}
 
 	recordsToSkipNum = dnsHeader->answerCount + dnsHeader->authorityCount
-	if (!skipRecords(recordsToSkipNum, &restOfPacket, &restOfPacketLength))
+	if (!skipRecords(recordsToSkipNum, &restOfMessage, &restOfMessageLength))
 	{
 		*isGenerallyMalformed = TRUE;
 		freeQuestionData(&question);
 		return FALSE;
 	}
 
-	result = isAdditionalSectionMalformed(dnsHeader->additionalCount, restOfPacket, restOfPacketLength, 
+	result = isAdditionalSectionMalformed(dnsHeader->additionalCount, restOfMessage, restOfMessageLength, 
 										  question->name, isGenerallyMalformed);
 	freeQuestionData(&question);
 	return result;
@@ -302,24 +397,26 @@ Bool isMalformedTKEYPacket(packet_info_t * packetInfo, Bool * isGenerallyMalform
 *
 * @param	packetInfo - contains information regarding the packet, such as its transport payload (if exists).
 */
-void setPacketActionAccordingToTkeyCve(packet_info_t * packetInfo)
+void setPacketActionAccordingToTkeyCve(unsigned char * dnsMessage, unsigned int dnsMessageLength, 
+									   log_row_t * packetLog)
+//void setPacketActionAccordingToTkeyCve(packet_info_t * packetInfo)
 {
 	Bool isGenerallyMalformed = FALSE;
 	Bool isMalformedTkey = FALSE;
 
-	isMalformedTkey = isMalformedTKEYPacket(packetInfo, &isGenerallyMalformed);
+	isMalformedTkey = isMalformedTKEYQuery(dnsMessage, dnsMessageLength, packetLog, &isGenerallyMalformed);
 	if (isGenerallyMalformed)
 	{
-		packetInfo->log.action = NF_DROP;
-		packetInfo->log.reason = REASON_MALFORMED_PACKET;
+		packetLog->action = NF_DROP;
+		packetLog->reason = REASON_MALFORMED_PACKET;
 	}
 	else if (isMalformedTkey)
 	{
-		packetInfo->log.action = NF_DROP;
-		packetInfo->log.reason = REASON_TKEY_MALFORMED_PACKET;
+		packetLog->action = NF_DROP;
+		packetLog->reason = REASON_TKEY_MALFORMED_PACKET;
 	}
 	else
 	{
-		packetInfo->log.action = NF_ACCEPT;
+		packetLog->action = NF_ACCEPT;
 	}
 }
