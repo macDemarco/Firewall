@@ -326,19 +326,19 @@ direction_t getPacketDirection(const struct net_device * in, const struct net_de
 */
 void resetPacketInfo(packet_info_t * packetInfo)
 {
-	packetInfo->isIPv4 = TRUE;
-	packetInfo->isXmas = FALSE;
-	packetInfo->ack = ACK_ANY;
-	packetInfo->isSyn = FALSE;
-	packetInfo->isFin = FALSE;
-	packetInfo->isRst = FALSE;
-	packetInfo->ipFragmentId = 0;
-	packetInfo->ipFragmentOffset = 0;
-	packetInfo->direction = DIRECTION_ANY;
-	packetInfo->transportPayload = NULL;
-	packetInfo->transportPayloadLength = 0;
-	packetInfo->transportPayloadOffset = 0;
-	packetInfo->packetBuffer = NULL;
+	packetInfo->isIPv4 = TRUE
+	packetInfo->isXmas = FALSE
+	packetInfo->ack = ACK_ANY
+	packetInfo->isSyn = FALSE
+	packetInfo->isFin = FALSE
+	packetInfo->isRst = FALSE
+	packetInfo->ipFragmentId = 0
+	packetInfo->ipFragmentOffset = 0
+	packetInfo->direction = DIRECTION_ANY
+	packetInfo->transportPayload = NULL
+	packetInfo->transportPayloadLength = 0
+	packetInfo->transportPayloadOffset = 0
+	packetInfo->packetBuffer = NULL
 }
 
 /**
