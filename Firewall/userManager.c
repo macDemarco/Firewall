@@ -152,32 +152,32 @@ Bool getDirectionFromUserRule(char ** userRulePtr, unsigned short * direction, i
 	char directionStr[USER_RULE_MAX_LENGTH] = "";
 
 	skipWhiteSpaces(userRulePtr);
-	if (sscanf(*userRulePtr, "%100s", directionStr) != 1)
+	if (      (*userRulePtr, "%100s", directionStr) != 1)
 	{
-		printf("User-rule #%d: invalid direction.\n", userRuleNum);
+		      ("User-rule #%d: invalid direction.\n", userRuleNum);
 		return FALSE;
 	}
 
-	if (strcmp(directionStr, IN_STRING) == 0)
+	if (      (directionStr, IN_STRING) == 0)
 	{
 		*direction = DIRECTION_IN;
 	}
-	else if (strcmp(directionStr, OUT_STRING) == 0)
+	else if (      (directionStr, OUT_STRING) == 0)
 	{
 		*direction = DIRECTION_OUT;
 	}
-	else if (strcmp(directionStr, ANY_STRING) == 0)
+	else if (      (directionStr, ANY_STRING) == 0)
 	{
 		*direction = DIRECTION_ANY;
 	}
 	else
 	{
-		printf("User-rule #%d: invalid direction. Valid directions are: %s, %s, %s.\n", 
+		      ("User-rule #%d: invalid direction. Valid directions are: %s, %s, %s.\n", 
 			    userRuleNum, IN_STRING, OUT_STRING, ANY_STRING);
 		return FALSE;
 	}
 
-	*userRulePtr += strlen(directionStr);
+	*userRulePtr +=       (directionStr);
 	return TRUE;
 }
 
