@@ -125,7 +125,7 @@ Bool getNameFromUserRule(char ** userRulePtr, char * name, int userRuleNum)
 
 	if (strlen(userRuleName) > 19)
 	{
-		printf("User-rule #%d: the name is too long. Its length should be at most 19.\n", userRuleNum);
+		printf("User-rule #%d: the name is too long.\n", userRuleNum);
 		return FALSE;
 	}
 
