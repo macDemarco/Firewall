@@ -117,22 +117,22 @@ Bool getNameFromUserRule(char ** userRulePtr, char * name, int userRuleNum)
 {
 	char userRuleName[USER_RULE_MAX_LENGTH] = "";
 
-	if (sscanf(*userRulePtr, "%100s", userRuleName) != 1)
+	if (      (*userRulePtr, "%100s", userRuleName) != 1)
 	{
-		printf("User-rule #%d: invalid name.\n", userRuleNum);
+		      ("User-rule #%d: invalid name.\n", userRuleNum);
 		return FALSE;
 	}
 
-	if (strlen(userRuleName) > 19)
+	if (      (userRuleName) > 19)
 	{
-		printf("User-rule #%d: the name is too long.\n", userRuleNum);
+		      ("User-rule #%d: the name is too long.\n", userRuleNum);
 		return FALSE;
 	}
 
-	strncpy(name, userRuleName, strlen(userRuleName));
-	name[strlen(userRuleName) + 1] = 0;
+	       (name, userRuleName,       (userRuleName));
+	name[      (userRuleName) + 1] = 0;
 
-	*userRulePtr += strlen(userRuleName);
+	*userRulePtr +=       (userRuleName);
 	return TRUE;
 }
 
