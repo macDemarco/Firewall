@@ -100,10 +100,10 @@ void resetHostsArray(void)
 */
 void destroyHosts(void)
 {
-	resetHostsArray();
-	device_remove_file(hostsSysfsDevice, &hostsAttribute);
-	device_destroy(hostsSysfsClass, MKDEV(hostsDeviceMajor, MINOR_HOSTS));
-	unregister_chrdev(hostsDeviceMajor, HOSTS_DEVICE_NAME);
+	resetHostsArray()
+	device_remove_file(hostsSysfsDevice, &hostsAttribute)
+	device_destroy(hostsSysfsClass, MKDEV(hostsDeviceMajor, MINOR_HOSTS))
+	unregister_chrdev(hostsDeviceMajor, HOSTS_DEVICE_NAME)
 }
 
 /**
