@@ -15,13 +15,6 @@ typedef struct
 	__be16 						srcPort;	  	
 	__be16 						dstPort;
 	ConnectionStateDescription	description;
-	__be16						lastIpFragment;
-	__be16						lastIpFragmentOffset;
-
-	void *						state;
-	StateFreeFunction			freeState;
-	
-
 	struct list_head			listNode;
 
 } connection_t;
