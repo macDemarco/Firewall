@@ -15,7 +15,7 @@ typedef struct
 	__be16 				srcPort;	  	
 	__be16 				dstPort;
 	ConnectionStateDescription	description;
-	struct list_head		listNode;
+	struct list_head			listNode;
 
 } connection_t;
 
