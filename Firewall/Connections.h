@@ -6,16 +6,16 @@
 
 
 
-typedef void (*StateFreeFunction)(void *);
+             (*StateFreeFunction)(     *);
 
-typedef struct
+
 {
 	__be32   		 	srcIp;		  	
 	__be32				dstIp;		  	
 	__be16 				srcPort;	  	
 	__be16 				dstPort;
 	ConnectionStateDescription	description;
-	struct list_head			listNode;
+	       list_head			listNode;
 
 } connection_t;
 
