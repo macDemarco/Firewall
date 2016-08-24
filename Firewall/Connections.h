@@ -15,7 +15,7 @@
 	__be16 				srcPort;	  	
 	__be16 				dstPort;
 	ConnectionStateDescription	description;
-	       list_head			listNode;
+	       list_head		listNode;
 
 } connection_t;
 
