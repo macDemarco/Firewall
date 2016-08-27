@@ -14,6 +14,7 @@ typedef struct
 	Bool		isSyn;
 	Bool		isRst;
 	Bool		isFin;
+	__be32		tcpSequence;
 	__be16		ipFragmentId;
 	__be16		ipFragmentOffset;
 	direction_t direction;
