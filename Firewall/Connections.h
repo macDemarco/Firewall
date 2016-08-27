@@ -4,18 +4,27 @@
 #include <linux/list.h>
 #include "KernelDefs.h"
 
+typedef void (*StateFreeFunction)(void *);
 
-
-             (*StateFreeFunction)(     *);
-
-
+typedef struct
 {
-	__be32   		 	srcIp;		  	
-	__be32				dstIp;		  	
-	__be16 				srcPort;	  	
-	__be16 				dstPort;
+	__be32   					srcIp;		  	
+	__be32						dstIp;		  	
+	__be16 						srcPort;	  	
+	__be16 						dstPort;
 	ConnectionStateDescription	description;
-	       list_head		listNode;
+
+	__be16						lastAcceptedIpFragment;			
+	__be16						lastAcceptedIpFragmentOffset;	
+
+	Bool						isLastDroppedTcpSequenceValid;
+	__be32						lastDroppedTcpSequence;
+
+	void *						state;
+	StateFreeFunction			freeState;
+	
+
+	struct list_head			listNode;
 
 } connection_t;
 
@@ -36,6 +45,8 @@ typedef struct
 typedef struct
 {
 	fragment_state_t	fragmentState;
+	Bool				isProcessingPost;
+	unsigned char		boundary[MIME_BOUNDARY_MAX_LENGTH];
 } http_state_t;
 
 
@@ -46,6 +57,7 @@ void destroyConnections(void);
 void addNewGenericConnection(packet_info_t * packetInfo);
 void updateConnection(packet_info_t * packetInfo);
 Bool isRelatedToFtpConnection(packet_info_t * packetInfo);
+Bool isSpecificPortPacketWithData(packet_info_t * packetInfo, __be16 portInNetworkOrder);
 
 
 #endif // _CONNECTIONS_H_
