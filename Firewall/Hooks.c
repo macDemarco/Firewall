@@ -7,6 +7,7 @@
 #include "KernelDefs.h"
 #include "Connections.h"
 #include "TkeyCveFix.h"
+#include "DLP.h"
 
 /* Globals */
 static struct nf_hook_ops preRoutingHook = { { NULL, NULL }, 0 };
@@ -110,6 +111,8 @@ unsigned int buildPacketTCPHeaderInfo(packet_info_t * packetInfo, unsigned int i
 	packetInfo->isXmas = ((tcpHeader->psh == 1) &&
 						  (tcpHeader->urg == 1) &&
 				          (tcpHeader->fin == 1));
+
+	packetInfo->tcpSequence = tcpHeader->seq;
 
 	tcpHeaderLength = tcpHeader->doff * 4; 
 	return tcpHeaderLength;
@@ -326,19 +329,20 @@ direction_t getPacketDirection(const struct net_device * in, const struct net_de
 */
 void resetPacketInfo(packet_info_t * packetInfo)
 {
-	packetInfo  isIPv4 = TRUE
-	packetInfo  isXmas = FALSE
-	packetInfo  ack = ACK_ANY
-	packetInfo  isSyn = FALSE
-	packetInfo  isFin = FALSE
-	packetInfo  isRst = FALSE
-	packetInfo  ipFragmentId = 0
-	packetInfo  ipFragmentOffset = 0
-	packetInfo  direction = DIRECTION_ANY
-	packetInfo  transportPayload = NULL
-	packetInfo  transportPayloadLength = 0
-	packetInfo  transportPayloadOffset = 0
-	packetInfo  packetBuffer = NULL
+	packetInfo->isIPv4 = TRUE;
+	packetInfo->isXmas = FALSE;
+	packetInfo->ack = ACK_ANY;
+	packetInfo->isSyn = FALSE;
+	packetInfo->isFin = FALSE;
+	packetInfo->isRst = FALSE;
+	packetInfo->tcpSequence = 0;
+	packetInfo->ipFragmentId = 0;
+	packetInfo->ipFragmentOffset = 0;
+	packetInfo->direction = DIRECTION_ANY;
+	packetInfo->transportPayload = NULL;
+	packetInfo->transportPayloadLength = 0;
+	packetInfo->transportPayloadOffset = 0;
+	packetInfo->packetBuffer = NULL;
 }
 
 /**
@@ -383,6 +387,30 @@ void setSynPacketAction(packet_info_t * packetInfo)
 	}
 }
 
+/* If the packet is supposed to be accepted, checks if it is also acceptable according to the DLP.
+   Meaning, makes sure it doesn't contain C code. */
+void setPacketActionAccordingToDLP(packet_info_t * packetInfo)
+{
+	if ((packetInfo->log.action == NF_DROP) ||
+		(packetInfo->direction != DIRECTION_OUT))
+	{
+		/* The packet is already being dropped or it is not an outgoing packet, 
+		   either way there's no need for DLP checks. */
+		return;
+	}
+
+	if (isSpecificPortPacketWithData(packetInfo, htons(HTTP_PORT)) ||
+		isSpecificPortPacketWithData(packetInfo, htons(SMTP_PORT)))
+	{
+		if (isCCode(packetInfo))
+		{
+			packetInfo->log.action = NF_DROP;
+			packetInfo->log.reason = REASON_C_CODE_PACKET;
+		}
+	}
+}
+
+// TODO: Update documentation.
 /**
 * @brief	Assuming the firewall is active, decides if the given packet is acceptable, 
 *			and sets its action and reason accordingly.
@@ -393,37 +421,38 @@ void setSynPacketAction(packet_info_t * packetInfo)
 */
 void setPacketAction(packet_info_t * packetInfo)
 {
-	setPacketActionAccordingToTkeyCve(packetInfo);
-	if (packetInfo->log.action == NF_DROP)
-	{
-		return;
-	}
-
 	if (packetInfo->log.protocol == PROT_TCP)
 	{
-		// TODO: Delete
-		printk(KERN_INFO "setPacketAction: PROT_TCP\n");
 		if ((packetInfo->ack == ACK_NO) && (packetInfo->isSyn))
 		{
 			/* New TCP connection */
-			// TODO: Delete
-			printk(KERN_INFO "setPacketAction: new TCP connection\n");
 			setSynPacketAction(packetInfo);
 		}
 		else
 		{
 			/* Existing TCP connection: Deciding what to do with the packet according the connection table. */
-			// TODO: Delete
-			printk(KERN_INFO "setPacketAction: Existing TCP connection.\n");
 			updateConnection(packetInfo);
 		}
 	}
 	else
 	{
-		// TODO: Delete
-		printk(KERN_INFO "setPacketAction: not PROT_TCP\n");
+		/* First setting the action according to the TKEY CVE */
+		if ((packetInfo->log.protocol == PROT_UDP) && (packetInfo->log.dst_port == htons(DNS_PORT)))
+		{
+			setDNSPacketActionAccordingToTkeyCve(packetInfo->transportPayload, 
+												 packetInfo->transportPayloadLength, 
+												 &(packetInfo->log));
+			if (packetInfo->log.action == NF_DROP)
+			{
+				return;
+			}
+		}
+
 		setPacketActionAccordingToRulesTable(packetInfo);
 	}
+
+	/* If the packet is supposed to be accpeted, makes sure it doesn't leak data. */
+	setPacketActionAccordingToDLP(packetInfo);
 }
 
 /**
