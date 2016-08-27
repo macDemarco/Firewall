@@ -36,8 +36,14 @@ typedef enum { FALSE = 0, TRUE = 1 } Bool;
 #define FTP_PORT 21
 #define FTP_DATA_PORT 20
 #define HTTP_PORT 80
+#define DNS_PORT 53
+#define SMTP_PORT 25
 
 #define UDP_HEADER_LENGTH 8
+
+#define MIME_BOUNDARY_MAX_LENGTH 72
+#define MIME_LAST_BOUNDARY_MAX_LENGTH 76
+#define MIME_BOUNDARY_ADDITIONAL_CHAR 0x2d
 
 /* Defining a macro, similar to the macro __ATTR (which is used in the macro DEVICE_ATTR),
 except that this macro doesn't stringify (adds " ") the attribute's name.
