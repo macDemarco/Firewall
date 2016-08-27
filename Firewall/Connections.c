@@ -6,6 +6,7 @@
 #include <linux/string.h>
 #include <linux/slab.h>
 #include "Hosts.h"
+#include "WordpressCveFix.h"
 
 /* Constants */
 #define FTP_PORT_COMMAND_MAX_LENGTH 40
@@ -321,10 +322,16 @@ ssize_t readConnection(struct file *filp, char *buff, size_t length, loff_t *off
 	return connectionStringLength;
 }
 
-void setIpFragmentDetails(connection_t * connection, packet_info_t * packetInfo)
+void setAcceptedIpFragmentDetails(connection_t * connection, packet_info_t * packetInfo)
 {
-	connection->lastIpFragment = packetInfo->ipFragmentId;
-	connection->lastIpFragmentOffset = packetInfo->ipFragmentOffset;
+	connection->lastAcceptedIpFragment = packetInfo->ipFragmentId;
+	connection->lastAcceptedIpFragmentOffset = packetInfo->ipFragmentOffset;
+}
+
+void setDroppedTcpSequenceDetails(connection_t * connection, packet_info_t * packetInfo)
+{
+	connection->lastDroppedTcpSequence = packetInfo->tcpSequence;
+	connection->isLastDroppedTcpSequenceValid = TRUE;
 }
 
 /**
@@ -337,7 +344,9 @@ void setGenericConnection(connection_t * connection, packet_info_t * packetInfo)
 	connection->srcPort = packetInfo->log.src_port;
 	connection->dstPort = packetInfo->log.dst_port;
 	connection->description = SENT_SYN;
-	setIpFragmentDetails(connection, packetInfo);
+	setAcceptedIpFragmentDetails(connection, packetInfo);
+	connection->isLastDroppedTcpSequenceValid = FALSE;
+	connection->lastDroppedTcpSequence = 0;
 	connection->state = NULL;
 	connection->freeState = NULL;
 }
@@ -614,9 +623,23 @@ Bool isFinalPacket(connection_t * existingConnection, connection_t * reversedCon
 			(reversedConnection->description == SENT_FIN));
 }
 
+/* Checks if the packet has been already accpeted in another hook. The function uses the fact that
+   different packets have different ip fragment id (or offset). */
+Bool wasPacketAccpetedInAnotherHook(packet_info_t * packetInfo, connection_t * existingConnection)
+{
+	return ((existingConnection->lastAcceptedIpFragment == packetInfo->ipFragmentId) &&
+			(existingConnection->lastAcceptedIpFragmentOffset == packetInfo->ipFragmentOffset));
+}
+
+Bool wasTcpSegmentalreadyDropped(packet_info_t * packetInfo, connection_t * existingConnection)
+{
+	return ((existingConnection->isLastDroppedTcpSequenceValid) &&
+			(existingConnection->lastDroppedTcpSequence == packetInfo->tcpSequence));
+}
+
 /**
-* @brief	Checks if the given packet has been already handled. This can happen if the packet has been received 
-*			and handled in the pre-routing hook, and it is now received in the post-routing hook.
+* @brief	Checks if the given packet has been already handled. A packet is considered 'handled' if
+*			it has already bee accepeted in another hook, or if the same tcp sequence has been already dropped.
 *
 * @param	packetInfo - holds information about the received packet, such as its ip fragment id and offset.
 * @param	existingConnection - the connection from the list which matches the given packet. Holds
@@ -626,9 +649,24 @@ Bool isFinalPacket(connection_t * existingConnection, connection_t * reversedCon
 */
 Bool isHandledPacket(packet_info_t * packetInfo, connection_t * existingConnection)
 {
-	return ((existingConnection != NULL) &&
-			(existingConnection->lastIpFragment == packetInfo->ipFragmentId) &&
-			(existingConnection->lastIpFragmentOffset == packetInfo->ipFragmentOffset));
+	if (existingConnection != NULL)
+	{
+		if (wasPacketAccpetedInAnotherHook(packetInfo, existingConnection))
+		{
+			return TRUE;
+		}
+
+		if (wasTcpSegmentalreadyDropped(packetInfo, existingConnection))
+		{
+			/* The packet was dropped and it is now received again. Itshould be dropped again
+			   so it wouldn't confuse the state-machine */
+			packetInfo->log.action = NF_DROP;
+			packetInfo->log.reason = REASON_PREVIOUSLY_DROPPED;
+			return TRUE;
+		}
+	}
+
+	return FALSE;
 }
 
 void freeFragmentStateContent(fragment_state_t * fragmentState)
@@ -1015,7 +1053,7 @@ Bool isBeginningOfHttpGetRequest(packet_info_t * packetInfo)
 *
 * @note		connection->state should be NULL before calling this function.
 */
-void assignConnectionNewHttpState(packet_info_t * packetInfo, connection_t * connection)
+void assignConnectionNewHttpState(packet_info_t * packetInfo, connection_t * connection, Bool shouldInitFragment)
 {
 	http_state_t * httpState = NULL;
 
@@ -1026,8 +1064,21 @@ void assignConnectionNewHttpState(packet_info_t * packetInfo, connection_t * con
 		printk(KERN_ERR "Failed to allocate memory for the http state.\n");
 		return;
 	}
+	httpState->isProcessingPost = FALSE;
+	httpState->boundary[0] = 0;
+	httpState->fragmentState.headerPrefix = NULL;
+	httpState->fragmentState.headerPrefixLength = 0;
 
-	if (initFragmentState(&(httpState->fragmentState), packetInfo))
+	if (shouldInitFragment)
+	{
+		if (initFragmentState(&(httpState->fragmentState), packetInfo))
+		{
+			/* Assigning the http state to the connection */
+			connection->freeState = freeHttpState;
+			connection->state = httpState;
+		}
+	}
+	else
 	{
 		/* Assigning the http state to the connection */
 		connection->freeState = freeHttpState;
@@ -1051,9 +1102,6 @@ void handleConnectionCompleteHttpPacket(packet_info_t * currentPacketInfo, char 
 {
 	char * singleLine = NULL;
 
-	// TODO: Delete
-	printk(KERN_INFO "handleConnectionCompleteHttpPacket\n");
-
 	/* Iterating the http lines */
 	singleLine = strsep(&httpPacket, HTTP_LINES_DELIMITER);
 	while (httpPacket != NULL)
@@ -1073,8 +1121,6 @@ void handleConnectionCompleteHttpPacket(packet_info_t * currentPacketInfo, char 
 		if ((sscanfResult == 2) && (strcmp(fieldName, HTTP_HOST_FIELD_NAME) == 0))
 		{
 			/* This is a host field */
-			// TODO: Delete
-			printk(KERN_INFO "Host: %s\n", fieldValue);
 			if (!isHostAccepted(fieldValue))
 			{
 				currentPacketInfo->log.action = NF_DROP;
@@ -1087,12 +1133,96 @@ void handleConnectionCompleteHttpPacket(packet_info_t * currentPacketInfo, char 
 	}
 }
 
+/* Checks if the given connection is in the middle of processing an html post */
+Bool isHttpConnectionProcessingPost(connection_t * connection)
+{
+	http_state_t * httpState = NULL;
+
+	if (connection->state == NULL)
+	{
+		return FALSE;
+	}
+
+	httpState = (http_state_t *)(connection->state);
+	return httpState->isProcessingPost;
+}
+
+/* Checking if the message contains zip files.
+   If the boundary which separates between files hasn't been retrieved yet,
+   retreives it.
+   If it has been retrieved (here or in previous message), checks the files accordingly.*/
+void handleHttpPostPacket(packet_info_t * packetInfo, connection_t * connection)
+{
+	http_state_t * httpState = NULL;
+	unsigned int messageIndex = 0;
+
+	if (connection->state == NULL)
+	{
+		assignConnectionNewHttpState(packetInfo, connection, FALSE);
+		if (connection->state == NULL)
+		{
+			return;
+		}
+	}
+
+	httpState = (http_state_t *)connection->state;
+	httpState->isProcessingPost = TRUE;
+	
+	if (httpState->boundary[0] == 0)
+	{
+		/* We still havn't found the boundary, therefore the given packet contains the http header */
+		if (!retrieveFileBoundary(packetInfo, &(httpState->boundary[0]), &messageIndex))
+		{
+			printk(KERN_ERR "Malformed http post packet: failed to retrieve file boundary.\n");
+			packetInfo->log.action = NF_DROP;
+			packetInfo->log.reason = REASON_MALFORMED_PACKET;
+			return;
+		}
+
+		if (httpState->boundary[0] == 0)
+		{
+			return;
+		}
+	}
+
+	/* The boundary exists */
+	if (messageIndex < packetInfo->transportPayloadLength)
+	{
+		/* Checking the files according to the boundary */
+		if (doesContainZipFile(packetInfo, httpState->boundary, messageIndex))
+		{
+			printk(KERN_ERR "Malformed wordpress http post packet: the packet contains zip, dropping it.\n");
+			packetInfo->log.action = NF_DROP;
+			packetInfo->log.reason = REASON_HTTP_POST_MALFORMED_PACKET;
+			setDroppedTcpSequenceDetails(connection, packetInfo);
+		}
+
+		if (isHttpPostOver(packetInfo, httpState->boundary))
+		{
+			/* Finished processing the http post message */
+			httpState->boundary[0] = 0;
+			httpState->isProcessingPost = FALSE;
+		}
+	}
+}
+
+
 /**
 * @brief	Handles the received HTTP packet.
 */
 void handleHttpPacket(packet_info_t * packetInfo, connection_t * connection)
 {
-	/* We save the current fragment if we're in the middle of saving an get request or if this is a new get request */
+	/* If we're in the middle of processing post packet, we continue doing that */
+	if (isHttpConnectionProcessingPost(connection))
+	{
+		if (packetInfo->transportPayloadLength != 0)
+		{
+			handleHttpPostPacket(packetInfo, connection);
+		}
+		return;
+	}
+
+	/* We save the current fragment if we're in the middle of saving a get request or if this is a new get request */
 	if (doesConnectionHoldHttpFragment(connection))
 	{
 		/* Appending the given http packet to the saved fragment */
@@ -1103,12 +1233,17 @@ void handleHttpPacket(packet_info_t * packetInfo, connection_t * connection)
 		/* Saving the current fragment */
 		if (connection->state == NULL)
 		{
-			assignConnectionNewHttpState(packetInfo, connection);
+			assignConnectionNewHttpState(packetInfo, connection, TRUE);
 		}
 		else
 		{
 			appendToConnectionHttpFragment(packetInfo, connection);
 		}
+	}
+	else if (isWordpressHttpPostPacket(packetInfo))
+	{
+		handleHttpPostPacket(packetInfo, connection);
+		return;
 	}
 
 	/* If the connection now holds a complete http packet, handling it and reseting the fragment */
@@ -1129,33 +1264,27 @@ void handleHttpPacket(packet_info_t * packetInfo, connection_t * connection)
 * @brief	Returns TRUE if one of the given packet's ports are the given port and it has non-empty data (tcp payload),
 *			FALSE otherwise.
 */
-Bool isSpecificPortPacketWithData(packet_info_t * packetInfo, __be16 port)
+Bool isSpecificPortPacketWithData(packet_info_t * packetInfo, __be16 portInNetworkOrder)
 {	
-	return (((packetInfo->log.src_port == port) || (packetInfo->log.dst_port == port)) &&
+	return (((packetInfo->log.src_port == portInNetworkOrder) || (packetInfo->log.dst_port == portInNetworkOrder)) &&
 			(packetInfo->transportPayloadLength != 0));
 }	
 
 void statefulInspect(packet_info_t * packetInfo, connection_t * existingConnection, connection_t * reversedConnection)
 {
-	// TODO: Delete
-	printk(KERN_INFO "statefulInspect\n");
 	if (isSpecificPortPacketWithData(packetInfo, htons(FTP_PORT)))
 	{
-		// TODO: Delete
-		printk(KERN_INFO "statefulInspect: calling handleFtpPacket\n");
 		handleFtpPacket(packetInfo, existingConnection, reversedConnection);
 	}
 
 	else if (isSpecificPortPacketWithData(packetInfo, htons(HTTP_PORT)))
 	{
-		// TODO: Delete
-		printk(KERN_INFO "statefulInspect: Calling handleHttpPacket\n");
 		handleHttpPacket(packetInfo, existingConnection);
 	}
 
 	if (packetInfo->log.action == NF_ACCEPT)
 	{
-		setIpFragmentDetails(existingConnection, packetInfo);
+		setAcceptedIpFragmentDetails(existingConnection, packetInfo);
 	}
 }
 
@@ -1187,7 +1316,7 @@ void updateConnection(packet_info_t * packetInfo)
 	}
 	else if (isHandledPacket(packetInfo, existingConnection))
 	{
-		/* The packet has already been handled, just passing it. */
+		/* The packet has already been handled, making the same action as before */
 		return;
 	}
 	else if (packetInfo->isSyn)
