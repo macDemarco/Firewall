@@ -5,8 +5,6 @@ Bool startsWith(const unsigned char * buffer, unsigned int bufferLength, const u
 {
 	if (bufferLength < strlen(prefix))
 	{
-		// TODO: Delete
-		//printk(KERN_INFO "startsWith: not long enough\n");
 		return FALSE;
 	}
 
@@ -50,8 +48,6 @@ Bool retrieveFileBoundary(packet_info_t * packetInfo, unsigned char * boundary, 
 		i++;
 	} // end while
 
-	// TODO: Delete
-	//printk(KERN_INFO "The http packet doesn't contain a content-type field.\n");
 	return TRUE;
 }
 
@@ -60,30 +56,14 @@ Bool isMimePartMediaTypeZipFile(packet_info_t * packetInfo, unsigned int * messa
 	unsigned int i = *messageIndex;
 	Bool result = FALSE;
 
-	// TODO: Delete
-	//printk(KERN_INFO "isMimePartZipFile: Checking if the file starting in i = %u is zip\n", i);
-
 	if (i + strlen(ZIP_FILE_BEGINNING) < packetInfo->transportPayloadLength)
 	{
-		// TODO: Delete
-		//printk(KERN_INFO "isMimePartZipFile: First bytes: %x %x %x %x\n",
-		//	packetInfo->transportPayload[i], packetInfo->transportPayload[i + 1],
-		//	packetInfo->transportPayload[i + 2], packetInfo->transportPayload[i + 3]);
-
 		if (strncmp(packetInfo->transportPayload + i, ZIP_FILE_BEGINNING, strlen(ZIP_FILE_BEGINNING)) == 0)
 		{
 			/* Found a zip file */
-			// TODO: Delete
-			printk(KERN_INFO "isMimePartZipFile: Found a zip file, i = %u\n", i);
 			i += strlen(ZIP_FILE_BEGINNING);
 			result = TRUE;
 		}
-	}
-	else
-	{
-		/* The file is not long enough to be a zip file */
-		// TODO: Delete
-		//printk(KERN_INFO "isMimePartZipeFile: the file isn't long enough to be a zip file\n");
 	}
 
 	*messageIndex = i;
@@ -112,20 +92,7 @@ Bool isMimePartZipFile(packet_info_t * packetInfo, unsigned int * messageIndex)
 	} 
 
 	/* We've reached the end of the packet without finding a new line, the part doesn't contain a zip file */
-	// TODO: Delete
-	printk(KERN_INFO "isMimePartZipFile: The mime part didn't contain a new line, so the file didn't even start. not zip.\n");
 	return FALSE;
-}
-
-// TODO: Delete
-void printChars(unsigned char * buffer, unsigned int length)
-{
-	unsigned int i = 0;
-	for (i = 0; i < length; ++i)
-	{
-		printk("%c ", buffer[i]);
-	}
-	printk("\n");
 }
 
 /* Checks if the given packet contains a zip file.
@@ -139,9 +106,6 @@ Bool doesContainZipFile(packet_info_t * packetInfo, unsigned char * boundary, un
 	/* Iterating the mime parts */
 	while (i + boundaryLength < packetInfo->transportPayloadLength)
 	{
-		// TODO: Delete
-		//printChars(packetInfo->transportPayload + i, boundaryLength);
-
 		if (strncmp(packetInfo->transportPayload + i, boundary, boundaryLength) == 0)
 		{
 			i += boundaryLength;
@@ -150,14 +114,10 @@ Bool doesContainZipFile(packet_info_t * packetInfo, unsigned char * boundary, un
 				(packetInfo->transportPayload[i + 1] == MIME_BOUNDARY_ADDITIONAL_CHAR))
 			{
 				/* Reached the last boundary without seeing any zip files */
-				// TODO: Delete
-				//printk(KERN_INFO "doesContainZipFile: Reached the last boundary without seeing any zip files.\n");
 				return FALSE;
 			}
 			if (isMimePartZipFile(packetInfo, &i))
 			{
-				// TODO: Delete
-				printk(KERN_INFO "doesContainZipFile: found a zip file!\n");
 				return TRUE;
 			}
 		}
@@ -176,8 +136,6 @@ Bool endsWith(const unsigned char * buffer, unsigned int bufferLength, const uns
 {
 	if (bufferLength < strlen(suffix))
 	{
-		// TODO: Delete
-		//printk(KERN_INFO "endsWith: not long enough\n");
 		return FALSE;
 	}
 	else
@@ -209,13 +167,6 @@ Bool isHttpPostOver(packet_info_t * packetInfo, unsigned char * boundary)
 /* Checks if it starts with 'post /wp-admin/...' */
 Bool isWordpressHttpPostPacket(packet_info_t * packetInfo)
 {
-	// TODO: Delete
-	//printk(KERN_INFO "isWordpressHttpPostPacket: payloadLength = %u\n", packetInfo->transportPayloadLength);
-	//if (packetInfo->transportPayloadLength > 4)
-	//{
-	//	printk("isWordpressHttpPostPacket: First bytes: %x %x %x %x\n", packetInfo->transportPayload[0],
-	//		packetInfo->transportPayload[1], packetInfo->transportPayload[2], packetInfo->transportPayload[3]);
-	//}
 	return startsWith(packetInfo->transportPayload, packetInfo->transportPayloadLength, 
 					  WORDPRESS_HTTP_POST_PREFIX);
 }
