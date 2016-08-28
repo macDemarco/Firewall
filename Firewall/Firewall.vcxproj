@@ -120,6 +120,7 @@
   <ItemGroup>
     <ClInclude Include="Connections.h" />
     <ClInclude Include="Defs.h" />
+    <ClInclude Include="DLP.h" />
     <ClInclude Include="fw.h" />
     <ClInclude Include="fw_user.h" />
     <ClInclude Include="Hooks.h" />
@@ -129,9 +130,11 @@
     <ClInclude Include="Rules.h" />
     <ClInclude Include="rulesTableTester.h" />
     <ClInclude Include="TkeyCveFix.h" />
+    <ClInclude Include="WordpressCveFix.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Connections.c" />
+    <ClCompile Include="DLP.c" />
     <ClCompile Include="Hooks.c" />
     <ClCompile Include="Hosts.c" />
     <ClCompile Include="Log.c" />
@@ -142,6 +145,7 @@
     <ClCompile Include="TkeyCveFix.c" />
     <ClCompile Include="userManager.c" />
     <ClCompile Include="userTester.c" />
+    <ClCompile Include="WordpressCveFix.c" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
