@@ -117,22 +117,22 @@ Bool getNameFromUserRule(char ** userRulePtr, char * name, int userRuleNum)
 {
 	char userRuleName[USER_RULE_MAX_LENGTH] = "";
 
-	if (      (*userRulePtr, "%100s", userRuleName) != 1)
+	if (sscanf(*userRulePtr, "%100s", userRuleName) != 1)
 	{
-		      ("User-rule #%d: invalid name.\n", userRuleNum);
+		printf("User-rule #%d: invalid name.\n", userRuleNum);
 		return FALSE;
 	}
 
-	if (      (userRuleName) > 19)
+	if (strlen(userRuleName) > 19)
 	{
-		      ("User-rule #%d: the name is too long.\n", userRuleNum);
+		printf("User-rule #%d: the name is too long. Its length should be at most 19.\n", userRuleNum);
 		return FALSE;
 	}
 
-	       (name, userRuleName,       (userRuleName));
-	name[      (userRuleName) + 1] = 0;
+	strncpy(name, userRuleName, strlen(userRuleName));
+	name[strlen(userRuleName) + 1] = 0;
 
-	*userRulePtr +=       (userRuleName);
+	*userRulePtr += strlen(userRuleName);
 	return TRUE;
 }
 
@@ -152,32 +152,32 @@ Bool getDirectionFromUserRule(char ** userRulePtr, unsigned short * direction, i
 	char directionStr[USER_RULE_MAX_LENGTH] = "";
 
 	skipWhiteSpaces(userRulePtr);
-	if (      (*userRulePtr, "%100s", directionStr) != 1)
+	if (sscanf(*userRulePtr, "%100s", directionStr) != 1)
 	{
-		      ("User-rule #%d: invalid direction.\n", userRuleNum);
+		printf("User-rule #%d: invalid direction.\n", userRuleNum);
 		return FALSE;
 	}
 
-	if (      (directionStr, IN_STRING) == 0)
+	if (strcmp(directionStr, IN_STRING) == 0)
 	{
 		*direction = DIRECTION_IN;
 	}
-	else if (      (directionStr, OUT_STRING) == 0)
+	else if (strcmp(directionStr, OUT_STRING) == 0)
 	{
 		*direction = DIRECTION_OUT;
 	}
-	else if (      (directionStr, ANY_STRING) == 0)
+	else if (strcmp(directionStr, ANY_STRING) == 0)
 	{
 		*direction = DIRECTION_ANY;
 	}
 	else
 	{
-		      ("User-rule #%d: invalid direction. Valid directions are: %s, %s, %s.\n", 
+		printf("User-rule #%d: invalid direction. Valid directions are: %s, %s, %s.\n", 
 			    userRuleNum, IN_STRING, OUT_STRING, ANY_STRING);
 		return FALSE;
 	}
 
-	*userRulePtr +=       (directionStr);
+	*userRulePtr += strlen(directionStr);
 	return TRUE;
 }
 
@@ -387,7 +387,11 @@ Bool getPortFromUserRule(char ** userRulePtr, unsigned short * port, int userRul
 	{
 		*port = PORT_ANY;
 	}
-	else if (sscanf(portStr, "%hu%2s", port, tempStr) != 1)
+	else if (sscanf(portStr, "%hu%2s", port, tempStr) == 1)
+	{
+		*port = htons(*port);
+	}
+	else
 	{
 		printf("User-rule #%d: invalid port: Valid port should be '%s', '%s' or an unsigned short.\n", userRuleNum, ANY_STRING, PORT_ABOVE_1023_STRING);
 		return FALSE;
@@ -1092,6 +1096,18 @@ void setReasonString(char * reasonStr, reason_t reason)
 
 		case REASON_TKEY_MALFORMED_PACKET:
 			sprintf(reasonStr, "%s", "TKEY_MALFORMED_PACKET");
+			return;
+
+		case REASON_HTTP_POST_MALFORMED_PACKET:
+			sprintf(reasonStr, "%s", "HTTP_POST_MALFORMED_PACKET");
+			return;
+
+		case REASON_PREVIOUSLY_DROPPED:
+			sprintf(reasonStr, "%s", "PREVIOUSLY_DROPPED");
+			return;
+
+		case REASON_C_CODE_PACKET:
+			sprintf(reasonStr, "%s", "C_CODE_PACKET");
 			return;
 
 		default:
