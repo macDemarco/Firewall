@@ -410,12 +410,13 @@ void setPacketActionAccordingToDLP(packet_info_t * packetInfo)
 	}
 }
 
-// TODO: Update documentation.
 /**
 * @brief	Assuming the firewall is active, decides if the given packet is acceptable, 
 *			and sets its action and reason accordingly.
 *			If the packet is related to an existing TCP connection, decides according to the connection-table.
 *			Otherwise, decides according to the rules-table. A special case is when the packet is a new TCP connection.
+*			Anothe special case is if the packet is DNS message.
+*			At last, if the packet is acceptable, checks if it is also accepatable according to the DLP.
 *
 * @param	packetInfo - the packet which its action should be set.
 */
