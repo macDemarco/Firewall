@@ -11,6 +11,16 @@ Bool startsWith(const unsigned char * buffer, unsigned int bufferLength, const u
 	return (strncmp(buffer, prefix, strlen(prefix)) == 0);
 }
 
+/**
+* @brief	Retrieves the MIME file boundary (which separates between different files).
+*			The function looks for the HTTP content type string, which the boundary follows.
+*
+* @param	packetInfo - contains information regarding the packet, such as the transport payload.
+* @param	boundary - an out parameter, which the function fills with the boundary.
+* @param	messageIndex - out parameter, which the function updates to point after the boundary.
+*
+* @return	TRUE for success, FALSE for failure.
+*/
 Bool retrieveFileBoundary(packet_info_t * packetInfo, unsigned char * boundary, unsigned int * messageIndex)
 {
 	unsigned int i = 0;
@@ -51,6 +61,16 @@ Bool retrieveFileBoundary(packet_info_t * packetInfo, unsigned char * boundary, 
 	return TRUE;
 }
 
+/**
+* @brief	Checks if the media type of the current MIME part (the actual file) is a ZIP file,
+*			by checking its beginning. 
+*
+* @param	packetInfo - contains information regarding the packet, such as the transport payload.
+* @param	messageIndex - both in and out parameter. At first it points to the beinning of the file.
+*			The function updates it as it parses the packet.
+*
+* @return	TRUE if the file is a ZIP file, FALSE otherwise.
+*/
 Bool isMimePartMediaTypeZipFile(packet_info_t * packetInfo, unsigned int * messageIndex)
 {
 	unsigned int i = *messageIndex;
@@ -145,6 +165,15 @@ Bool endsWith(const unsigned char * buffer, unsigned int bufferLength, const uns
 	}
 }
 
+/**
+* @brief	Checks if the HTTP post message is over, by checking if it ends with the last boundary
+*			(it is a bit different than a regular boundary - it has some additional characters).
+*
+* @param	packetInfo - contains information regarding the packet, such as the transport payload.
+* @param	boundary - the regular HTTP (MIME) boundary.
+*
+* @return	TRUE if the HTTP post message is over, FLASE otherwise.
+*/
 Bool isHttpPostOver(packet_info_t * packetInfo, unsigned char * boundary)
 {
 	unsigned char lastBoundary[MIME_LAST_BOUNDARY_MAX_LENGTH];
