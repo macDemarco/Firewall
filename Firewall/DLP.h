@@ -20,9 +20,6 @@
 /* Structures */
 typedef struct
 {
-	// TODO: Delete
-	//unsigned int wordCount;
-
 	unsigned int lineCount;
 	unsigned int endOfLineSemicolonCount;
 	unsigned int pointerArrowCount;
