@@ -9,20 +9,20 @@ Bool parseDomainName(unsigned char * name, unsigned char nameCapacity,
 
 /* Function implementations */
 
+/* Checks if the DNS message is a query, according to the flags in the given DNS header. */
 Bool isQueryAccordingToFlags(dns_header_t * dnsHeader)
 {
 	__be16 flagsInHostOrder = ntohs(dnsHeader->flags);
 	return ((flagsInHostOrder & QUERY_RESPONSE_BIT_MASK) == QUERY_BIT_MASK);
 }
 
-// TODO: Maybe add a check of the opcode - maybe only standard queries are relevant.
-// TODO: Update documentation.
 /**
-* @brief	Checks if the given packet is a DNS query. If so, sets the given pointer to point
+* @brief	Checks if the given message is a DNS query. If so, sets the given pointer to point
 *			at the DNS header.
 *
-* @param	packetInfo - information regarding the packet, such as its destination port, 
-*			its transport layer's payload (if exists) and the payload's size.
+* @param	message - the message which could be a DNS query.
+* @param	messageLength - the length of the given message.
+* @param	packetLog
 * @param	dnsHeader - out parameter. If the packet has a DNS header which matches a malformed TKEY query,
 *			the function makes this point to the DNS header.
 * @param	isGenerallyMalformed - out parameter, which the function uses to indicate if the given packet
@@ -58,12 +58,9 @@ Bool isDNSQuery(unsigned char * message, unsigned int messageLength, log_row_t *
 	
 }
 
-// TODO: Update documentation.
 /**
-* @brief	Skips the given number of bytes in the given packet.
-*
-* @param	restOfPacket - promotes this pointer to point some bytes ahead.
-* @param	restOfPacketLength - decreases this length with the given number of bytes.
+* @brief	Skips the given number of bytes in the packet, by changing the given parameters
+*			of restOfMessage and restOfMessageLength.
 *
 * @note		This function doesn't check the validity of the skip (It might skip over the end of the packet).
 */
@@ -73,17 +70,20 @@ void skipBytesInMessage(unsigned int bytesToSkip, unsigned char ** restOfMessage
 	(*restOfMessageLength) -= bytesToSkip;
 }
 
+/* Checks if the given byte is a label length byte, by checking the according bits. */
 Bool isLabelLengthByte(unsigned char currentByte)
 {
 	return ((currentByte & BYTE_TYPE_MASK) == MASKED_LABEL_LENGTH_BYTE);
 }
 
+/* Checks if the given byte is a pointer byte, by checking the accordng bits */
 Bool isPointerByte(unsigned char currnetByte)
 {
 	return ((currnetByte & BYTE_TYPE_MASK) == MASKED_DOMAIN_NAME_POINTER_BYTE);
 }
 
-// Assuming that the name is long enough to contain the whole label plus a separator
+/* Appending the given name to the give label, assuming that the name is long enough 
+   to contain the whole label plus a separator */
 void appendLabelToName(unsigned char * name, unsigned char * label, unsigned char labelLength)
 {
 	unsigned char i = 0;
@@ -96,6 +96,7 @@ void appendLabelToName(unsigned char * name, unsigned char * label, unsigned cha
 	name[i] = LABEL_SEPARATOR;
 }
 
+/* Checks if the given domain-name index is in bounds. */
 Bool isNameIndexInBounds(unsigned short index, unsigned char nameCapacity, unsigned int messageLength)
 {
 	return ((index < MAX_DOMAIN_NAME_LENGTH)	&&
@@ -134,6 +135,7 @@ unsigned short getDomainNameOffset(unsigned char firstByte, unsigned char second
 	return offset;
 }
 
+/* Continues parsing the domain-name, when the current two bytes are a pointer. */
 Bool handleDomainNamePointer(unsigned char * name, unsigned char nameCapacity, 
 							 unsigned char ** restOfMessage, unsigned int * restOfMessageLength,
 							 unsigned char * messageStart, unsigned int messageLength, unsigned short i)
@@ -178,6 +180,7 @@ Bool handleDomainNamePointer(unsigned char * name, unsigned char nameCapacity,
 	}
 }
 
+/* Parses the domain name, which could be compressed. */
 Bool parseDomainName(unsigned char * name, unsigned char nameCapacity, 
 					 unsigned char ** restOfMessage, unsigned int * restOfMessageLength,
 					 unsigned char * messageStart, unsigned int messageLength)
@@ -231,15 +234,9 @@ Bool parseDomainName(unsigned char * name, unsigned char nameCapacity,
 	return FALSE;
 }
 
-// TODO: Update documentation.
 /**
-* @brief	Parses the DNS question.
-*
-* @param	restOfPacket - both in and out parameter. At first, it points at the start of the question inside
-*			the packet's buffer. The function then promotes it to point at the byte that follows the end of the question
-*			inside the same buffer.
-* @param	resetOfPacketLength - both in and out parameter. At first it specifies the length of the given buffer.
-*			The function then decreases it to specify the length of the buffer without the question.
+* @brief	Parses the DNS question by parsing its domain-name, its type and its class.
+*			Updates the restOfMessage to point after the question, and updates restOfMessageLength accordingly.
 *
 * @return	TRUE for success, FALSE for failure (a failure can be caused due to a malformed packet. An according
 *			error message is printed in that case).
@@ -273,13 +270,8 @@ Bool parseDNSQuestion(dns_question_t * question, unsigned char ** restOfMessage,
 
 // TODO: Update documentation.
 /**
-* @brief	Skips the current record.
-*
-* @param	restOfPacket - both in and out parameter. At first, it points at the first record which should be skipped.
-*			The function then promotes it to point at the byte that follows the last record which was skipped.
-* @param	restOfPacketLength - both in and out parameter. At first it specifies the length of the given buffer
-*			(the length of restOfPacket). The function then decreases it to specify the length of buffer
-*			without the skipped records.
+* @brief	Parses the current resource record by parsing its domain-name, its fixed-size fields and its rdata.
+*			Updates the restOfMessage to point after the question, and updates restOfMessageLength accordingly.
 *
 * @return	TRUE for success, FALSE for failure (a failure can be caused due to a malformed packet. An according
 *			error message is printed in that case).
@@ -316,16 +308,8 @@ Bool parseResourceRecord(dns_resource_record_t * record,
 	return TRUE;
 }
 
-// TODO: Update documentation.
 /**
 * @brief	Skips recordsNum DNS records.
-*
-* @param	recordsNum - specifies the number of records that should be skipped.
-* @param	restOfPacket - both in and out parameter. At first, it points at the first record which should be skipped.
-*			The function then promotes it to point at the byte that follows the last record which was skipped.
-* @param	restOfPacketLength - both in and out parameter. At first it specifies the length of the given buffer
-*			(the length of restOfPacket). The function then decreases it to specify the length of buffer
-*			without the skipped records.
 *
 * @return	TRUE for success, FALSE for failure (a failure can be caused due to a malformed packet. An according
 *			error message is printed in that case).
@@ -348,7 +332,6 @@ Bool skipRecords(unsigned int recordsNum, unsigned char ** restOfMessage, unsign
 	return TRUE;
 }
 
-// TODO: Update documentation.
 /**
 * @brief	Checks if the given additional section is malformed, in a way which can cause the 
 *			TKEY CVE (CVE-2015-5477). 
@@ -359,6 +342,9 @@ Bool skipRecords(unsigned int recordsNum, unsigned char ** restOfMessage, unsign
 * @param	additionalSection - the section in the DNS packet which contains the additional records.
 * @param	additionalSectionLength - the length of the additional section.
 * @param	questionName - the name which is compared with the named of the additional records.
+* @param	messageStart - points to the beginning of the DNS message. It is used in order to parse domain-names
+*			(in case they are compressed).
+* @param	messageLength - the length of the DNS message.
 * @param	isGenerallyMalformed - out parameter which the function uses to indicate if the section
 *			is generally malformed (and not in a way which can cause the TKEY CVE). For example,
 *			a packet which isn't long enough to contain the specified additional records.
@@ -405,7 +391,6 @@ Bool isAdditionalSectionMalformed(unsigned int additionalRecordsNum, unsigned ch
 	return ((!isTkeyRecordFound) && (isNonTkeyRecordFound));
 }
 
-// TODO: Update documentation.
 /**
 * @brief	Checks if the given packet is a malformed TKEY packet.
 *			More specifically, it checks if the packet's structure can cause CVE-2015-5477 (denial of service
@@ -416,7 +401,9 @@ Bool isAdditionalSectionMalformed(unsigned int additionalRecordsNum, unsigned ch
 *			as the questions). 
 *			(In a valid TKEY query, the additional RRs section contains a matching TKEY record).
 *
-* @param	packetInfo - contains information regarding the packet, such as its transport payload (if exists).
+* @param	dnsMessage
+* @param	dnsMessageLength
+* @param	packetlog
 * @param	isGenerallyMalformed - out parameter, which the function uses to indicate if the given packet
 *			is malformed in general. Meaning, it's not a specific malformed TKEY query, but it is malformed.
 *			For example, a packet which has the DNS port but isn't long enough to contain a DNS header.
