@@ -268,7 +268,6 @@ Bool parseDNSQuestion(dns_question_t * question, unsigned char ** restOfMessage,
 	
 }
 
-// TODO: Update documentation.
 /**
 * @brief	Parses the current resource record by parsing its domain-name, its fixed-size fields and its rdata.
 *			Updates the restOfMessage to point after the question, and updates restOfMessageLength accordingly.
